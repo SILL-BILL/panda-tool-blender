@@ -35,5 +35,5 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Build complete: "%REPOSITORY_ROOT%dist\panda_tool-0.2.0.zip"
+echo Build complete: "%REPOSITORY_ROOT%dist\panda_tool-0.3.0.zip"
 exit /b 0

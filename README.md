@@ -1,8 +1,8 @@
 # Panda Tool Blender
 
 Panda Tool is a small collection of practical Blender utilities for animation
-and rigging. Version 0.2.0 contains **Create Anchor** and **Disconnect Bones**
-for focused Edit Mode rigging tasks.
+and rigging. Version 0.3.0 contains **Create Anchor**, **Disconnect Bones**, and
+**Remove Unused Vertex Groups Safe**.
 
 ## Supported Blender versions
 
@@ -13,7 +13,7 @@ Blender 3.6 is not officially supported.
 
 ## Installation
 
-1. Download or build `panda_tool-0.2.0.zip`.
+1. Download or build `panda_tool-0.3.0.zip`.
 2. In Blender, open **Edit > Preferences > Get Extensions**.
 3. Open the menu, choose **Install from Disk**, and select the ZIP.
 4. Enable **Panda Tool** if it is not enabled automatically.
@@ -45,6 +45,20 @@ relationships, bone transforms, animation data, constraints, and unselected
 bones are left unchanged. The button is available only for an armature in Edit
 Mode, and the operation can be reverted with one Undo.
 
+## Remove Unused Vertex Groups Safe
+
+1. Make one Mesh Object active.
+2. Open **3D Viewport > Sidebar > Panda Tool > Vertex Groups**.
+3. Click **Scan Unused Groups** and review the checked candidates.
+4. Uncheck any groups you want to keep, then click **Remove Unused Groups**.
+
+Only groups without a positive-weight assignment on any vertex are candidates.
+A group is not considered unused merely because it has no matching armature
+bone, so groups intended for Geometry Nodes, clothing, or later processing are
+not removed on that basis. The selected groups are checked again immediately
+before removal, the result list is refreshed afterwards, and removal can be
+reverted with one Undo.
+
 ## Development tests
 
 The Blender-independent naming tests can be run from the repository root:
@@ -53,7 +67,7 @@ The Blender-independent naming tests can be run from the repository root:
 python -m unittest discover -s tests -v
 ```
 
-The Edit Bone integration test can be run with Blender itself:
+The Blender integration tests can be run with Blender itself:
 
 ```powershell
 blender --background --python tests/blender_integration.py
@@ -63,7 +77,7 @@ blender --background --python tests/blender_integration.py
 
 Run `build.bat` from the repository root, or double-click it in Explorer. The
 script uses Blender's standard Extension build command and writes the package
-to `dist/panda_tool-0.2.0.zip`:
+to `dist/panda_tool-0.3.0.zip`:
 
 ```powershell
 .\build.bat

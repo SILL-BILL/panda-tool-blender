@@ -128,11 +128,79 @@ def test_disconnect_bones():
     obj.select_set(False)
 
 
+def test_remove_unused_vertex_groups():
+    mesh = bpy.data.meshes.new("UnusedVertexGroupsTestMesh")
+    mesh.from_pydata(
+        [(0, 0, 0), (1, 0, 0), (0, 1, 0)],
+        [],
+        [(0, 1, 2)],
+    )
+    obj = bpy.data.objects.new("UnusedVertexGroupsTestMesh", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+
+    used = obj.vertex_groups.new(name="Used")
+    used.add([0], 1.0, "REPLACE")
+    tiny_weight = obj.vertex_groups.new(name="TinyWeight")
+    tiny_weight.add([1], 1e-12, "REPLACE")
+    zero_weight = obj.vertex_groups.new(name="ZeroWeight")
+    zero_weight.add([2], 0.0, "REPLACE")
+    obj.vertex_groups.new(name="Empty")
+
+    assert bpy.ops.panda_tool.scan_unused_vertex_groups() == {"FINISHED"}
+    candidates = {
+        item.group_name: item.remove
+        for item in obj.panda_unused_vertex_groups
+    }
+    assert candidates == {"ZeroWeight": True, "Empty": True}
+
+    # An unchecked candidate must survive and retain its choice after refresh.
+    empty_item = next(
+        item
+        for item in obj.panda_unused_vertex_groups
+        if item.group_name == "Empty"
+    )
+    empty_item.remove = False
+    assert bpy.ops.panda_tool.remove_unused_vertex_groups() == {"FINISHED"}
+    assert obj.vertex_groups.get("ZeroWeight") is None
+    assert obj.vertex_groups.get("Empty") is not None
+    assert obj.vertex_groups.get("Used") is not None
+    assert obj.vertex_groups.get("TinyWeight") is not None
+    assert len(obj.panda_unused_vertex_groups) == 1
+    assert obj.panda_unused_vertex_groups[0].group_name == "Empty"
+    assert obj.panda_unused_vertex_groups[0].remove is False
+
+    # A candidate that gains weight after scanning is protected by the
+    # immediate pre-removal re-scan.
+    obj.panda_unused_vertex_groups[0].remove = True
+    obj.vertex_groups["Empty"].add([2], 0.5, "REPLACE")
+    assert bpy.ops.panda_tool.remove_unused_vertex_groups() == {"CANCELLED"}
+    assert obj.vertex_groups.get("Empty") is not None
+    assert len(obj.panda_unused_vertex_groups) == 0
+    assert not bpy.ops.panda_tool.remove_unused_vertex_groups.poll()
+
+    obj.vertex_groups.new(name="UndoEmpty")
+    assert bpy.ops.panda_tool.scan_unused_vertex_groups() == {"FINISHED"}
+    bpy.ops.ed.undo_push(message="Before Remove Unused Vertex Groups")
+    assert bpy.ops.panda_tool.remove_unused_vertex_groups() == {"FINISHED"}
+    assert obj.vertex_groups.get("UndoEmpty") is None
+    # Background mode needs the UI operator's post-operation checkpoint
+    # mirrored explicitly before testing Undo.
+    bpy.ops.ed.undo_push(message="After Remove Unused Vertex Groups")
+    bpy.ops.ed.undo()
+    obj = bpy.data.objects["UnusedVertexGroupsTestMesh"]
+    assert obj.vertex_groups.get("UndoEmpty") is not None
+
+    obj.select_set(False)
+
+
 def main():
     panda_tool.register()
     bpy.context.preferences.edit.use_global_undo = True
 
     test_disconnect_bones()
+    test_remove_unused_vertex_groups()
 
     armature = bpy.data.armatures.new("PandaToolTestArmature")
     obj = bpy.data.objects.new("PandaToolTestArmature", armature)
@@ -224,6 +292,8 @@ def main():
         assert result == {"CANCELLED"}
     assert len(armature.bones) == bone_count
 
+    panda_tool.unregister()
+    assert not hasattr(bpy.types.Object, "panda_unused_vertex_groups")
     print("Panda Tool Blender integration test: OK")
 
 
