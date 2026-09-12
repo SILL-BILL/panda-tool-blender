@@ -1,0 +1,24 @@
+schema_version = "1.0.0"
+
+id = "panda_tool"
+version = "0.1.0"
+name = "Panda Tool"
+tagline = "Practical utilities for animation and rigging"
+maintainer = "Gonsaku"
+type = "add-on"
+
+website = "https://github.com/SILL-BILL/panda-tool-blender"
+
+blender_version_min = "4.2.0"
+
+license = [
+  "SPDX:GPL-3.0-only",
+]
+
+[build]
+paths_exclude_pattern = [
+  "__pycache__/",
+  "*.py[cod]",
+  ".*",
+  "*.zip",
+]
