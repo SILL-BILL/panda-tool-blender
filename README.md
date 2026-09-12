@@ -1,8 +1,8 @@
 # Panda Tool Blender
 
 Panda Tool is a small collection of practical Blender utilities for animation
-and rigging. Version 0.1.0 contains **Create Anchor**, which inserts a
-non-deforming anchor bone before each selected edit-bone chain.
+and rigging. Version 0.2.0 contains **Create Anchor** and **Disconnect Bones**
+for focused Edit Mode rigging tasks.
 
 ## Supported Blender versions
 
@@ -13,7 +13,7 @@ Blender 3.6 is not officially supported.
 
 ## Installation
 
-1. Download or build `panda_tool-0.1.0.zip`.
+1. Download or build `panda_tool-0.2.0.zip`.
 2. In Blender, open **Edit > Preferences > Get Extensions**.
 3. Open the menu, choose **Install from Disk**, and select the ZIP.
 4. Enable **Panda Tool** if it is not enabled automatically.
@@ -33,6 +33,18 @@ the root's head, makes the root a connected child, and preserves any existing
 parent above the new anchor. Generated anchors are selected after the operation.
 The whole operation can be reverted with one Undo.
 
+## Disconnect Bones
+
+1. Select an armature and enter Edit Mode.
+2. Select one or more bones.
+3. Open **3D Viewport > Sidebar > Panda Tool > Rig**.
+4. Click **Disconnect Bones**.
+
+The tool disables **Connected** only for the selected Edit Bones. Parent
+relationships, bone transforms, animation data, constraints, and unselected
+bones are left unchanged. The button is available only for an armature in Edit
+Mode, and the operation can be reverted with one Undo.
+
 ## Development tests
 
 The Blender-independent naming tests can be run from the repository root:
@@ -51,7 +63,7 @@ blender --background --python tests/blender_integration.py
 
 Run `build.bat` from the repository root, or double-click it in Explorer. The
 script uses Blender's standard Extension build command and writes the package
-to `dist/panda_tool-0.1.0.zip`:
+to `dist/panda_tool-0.2.0.zip`:
 
 ```powershell
 .\build.bat

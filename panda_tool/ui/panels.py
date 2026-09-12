@@ -12,3 +12,4 @@ class PANDA_PT_rig_tools(bpy.types.Panel):
 
     def draw(self, context):
         self.layout.operator("panda_tool.create_anchor", icon="BONE_DATA")
+        self.layout.operator("panda_tool.disconnect_bones", icon="UNLINKED")
