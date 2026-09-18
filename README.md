@@ -1,8 +1,8 @@
 # Panda Tool Blender
 
 Panda Tool is a small collection of practical Blender utilities for animation
-and rigging. Version 0.3.0 contains **Create Anchor**, **Disconnect Bones**, and
-**Remove Unused Vertex Groups Safe**.
+and rigging. Version 0.4.0 contains **Create Anchor**, **Disconnect Bones**,
+**Delete Unregistered Bones**, and **Remove Unused Vertex Groups Safe**.
 
 ## Supported Blender versions
 
@@ -13,7 +13,7 @@ Blender 3.6 is not officially supported.
 
 ## Installation
 
-1. Download or build `panda_tool-0.3.0.zip`.
+1. Download or build `panda_tool-0.4.0.zip`.
 2. In Blender, open **Edit > Preferences > Get Extensions**.
 3. Open the menu, choose **Install from Disk**, and select the ZIP.
 4. Enable **Panda Tool** if it is not enabled automatically.
@@ -44,6 +44,31 @@ The tool disables **Connected** only for the selected Edit Bones. Parent
 relationships, bone transforms, animation data, constraints, and unselected
 bones are left unchanged. The button is available only for an armature in Edit
 Mode, and the operation can be reverted with one Undo.
+
+## Delete Unregistered Bones
+
+1. Make one rigged Mesh Object active in Object Mode.
+2. Open **3D Viewport > Sidebar > Panda Tool > Rig**.
+3. Click **Scan Unregistered Bones** and review the candidates.
+4. Adjust the checkboxes, then click **Delete Checked Bones**.
+
+Panda Tool finds the Mesh's Armature through its parent or Armature Modifier.
+Bones without a same-named vertex group are candidates. Deform bones are
+checked by default. Non-Deform bones are unchecked by default and marked with
+a lock warning because they are commonly controllers or helper bones; the
+warning does not prevent manually selecting them. **All** and **None** change
+the complete candidate selection.
+
+Candidates are checked again immediately before deletion, so a bone is kept if
+a same-named vertex group was added after the scan. Children of deleted bones
+are reparented to their nearest surviving ancestor. Their rest Head, Tail,
+Roll, length, and direction are preserved; a reparented connected child is
+disconnected when necessary to prevent Blender from snapping its Head. The
+operation can be reverted with one Undo.
+
+This tool does not rewrite bone references in Actions or FCurves, Constraint
+subtargets, Drivers, or scripts. Carefully review the candidates before using
+it on animated or control rigs.
 
 ## Remove Unused Vertex Groups Safe
 
@@ -77,7 +102,7 @@ blender --background --python tests/blender_integration.py
 
 Run `build.bat` from the repository root, or double-click it in Explorer. The
 script uses Blender's standard Extension build command and writes the package
-to `dist/panda_tool-0.3.0.zip`:
+to `dist/panda_tool-0.4.0.zip`:
 
 ```powershell
 .\build.bat

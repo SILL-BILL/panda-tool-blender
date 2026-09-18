@@ -195,12 +195,192 @@ def test_remove_unused_vertex_groups():
     obj.select_set(False)
 
 
+def test_property_recovery_after_update():
+    from panda_tool.operators.remove_unused_vertex_groups import (
+        unregister_properties,
+    )
+
+    mesh = bpy.data.meshes.new("PropertyRecoveryTestMesh")
+    mesh.from_pydata([(0, 0, 0)], [], [])
+    obj = bpy.data.objects.new("PropertyRecoveryTestMesh", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    obj.vertex_groups.new(name="Empty")
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+
+    # Simulate the old extension unregistering properties after the new
+    # extension has registered its classes and panels.
+    unregister_properties()
+    assert not hasattr(bpy.types.Object, "panda_vertex_group_scan_complete")
+    assert not bpy.ops.panda_tool.remove_unused_vertex_groups.poll()
+    assert bpy.ops.panda_tool.scan_unused_vertex_groups() == {"FINISHED"}
+    assert hasattr(bpy.types.Object, "panda_vertex_group_scan_complete")
+    assert obj.panda_vertex_group_scan_complete
+    assert obj.panda_unused_vertex_groups[0].group_name == "Empty"
+    obj.select_set(False)
+
+
+def test_delete_unregistered_bones():
+    armature = bpy.data.armatures.new("BoneCleanupTestArmature")
+    armature_obj = bpy.data.objects.new("BoneCleanupTestArmature", armature)
+    bpy.context.scene.collection.objects.link(armature_obj)
+    bpy.context.view_layer.objects.active = armature_obj
+    armature_obj.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+
+    bones = armature.edit_bones
+    root = create_bone(bones, "Root", (0, 0, 0), (0, 1, 0), roll=0.1)
+    doomed_parent = create_bone(
+        bones,
+        "DoomedParent",
+        (0, 1, 0),
+        (0, 2, 0),
+        parent=root,
+        connected=True,
+        roll=0.2,
+    )
+    surviving_child = create_bone(
+        bones,
+        "SurvivingChild",
+        (0, 2, 0),
+        (0.4, 3, 0),
+        parent=doomed_parent,
+        connected=True,
+        roll=0.3,
+    )
+    connected_keep = create_bone(
+        bones,
+        "ConnectedKeep",
+        (0, 1, 0),
+        (1, 2, 0),
+        parent=root,
+        connected=True,
+        roll=0.4,
+    )
+    non_deform = create_bone(
+        bones,
+        "NonDeformControl",
+        (2, 0, 0),
+        (2, 1, 0),
+        roll=0.5,
+    )
+    non_deform.use_deform = False
+    create_bone(
+        bones,
+        "ProtectedAfterScan",
+        (3, 0, 0),
+        (3, 1, 0),
+        roll=0.6,
+    )
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+    mesh = bpy.data.meshes.new("BoneCleanupTestMesh")
+    mesh.from_pydata([(0, 0, 0)], [], [])
+    mesh_obj = bpy.data.objects.new("BoneCleanupTestMesh", mesh)
+    bpy.context.scene.collection.objects.link(mesh_obj)
+    modifier = mesh_obj.modifiers.new("Armature", "ARMATURE")
+    modifier.object = armature_obj
+    for name in ("Root", "SurvivingChild", "ConnectedKeep"):
+        mesh_obj.vertex_groups.new(name=name)
+
+    bpy.ops.object.select_all(action="DESELECT")
+    armature_obj.select_set(True)
+    mesh_obj.select_set(True)
+    bpy.context.view_layer.objects.active = mesh_obj
+
+    assert bpy.ops.panda_tool.scan_unregistered_bones() == {"FINISHED"}
+    candidates = {
+        item.bone_name: (item.remove, item.is_deform)
+        for item in mesh_obj.panda_unregistered_bones
+    }
+    assert candidates == {
+        "DoomedParent": (True, True),
+        "NonDeformControl": (False, False),
+        "ProtectedAfterScan": (True, True),
+    }
+
+    assert bpy.ops.panda_tool.set_unregistered_bone_selection(select=False) == {
+        "FINISHED"
+    }
+    assert not any(item.remove for item in mesh_obj.panda_unregistered_bones)
+    assert bpy.ops.panda_tool.set_unregistered_bone_selection(select=True) == {
+        "FINISHED"
+    }
+    assert all(item.remove for item in mesh_obj.panda_unregistered_bones)
+
+    selected_for_deletion = {"DoomedParent", "NonDeformControl"}
+    for item in mesh_obj.panda_unregistered_bones:
+        item.remove = item.bone_name in selected_for_deletion or (
+            item.bone_name == "ProtectedAfterScan"
+        )
+
+    # Adding a matching group after the scan must protect the bone.
+    mesh_obj.vertex_groups.new(name="ProtectedAfterScan")
+    child_data = armature.bones["SurvivingChild"]
+    child_before = {
+        "head": child_data.head_local.copy(),
+        "tail": child_data.tail_local.copy(),
+        "matrix": child_data.matrix_local.copy(),
+    }
+    child_length = child_data.length
+    connected_data = armature.bones["ConnectedKeep"]
+    connected_before = {
+        "head": connected_data.head_local.copy(),
+        "tail": connected_data.tail_local.copy(),
+    }
+
+    bpy.ops.ed.undo_push(message="Before Delete Unregistered Bones")
+    assert bpy.ops.panda_tool.delete_unregistered_bones() == {"FINISHED"}
+    assert "DoomedParent" not in armature.bones
+    assert "NonDeformControl" not in armature.bones
+    assert "ProtectedAfterScan" in armature.bones
+
+    child = armature.bones["SurvivingChild"]
+    assert child.parent == armature.bones["Root"]
+    assert child.use_connect is False
+    assert_vector_close(child.head_local, child_before["head"], "Reparented child head")
+    assert_vector_close(child.tail_local, child_before["tail"], "Reparented child tail")
+    for actual_row, expected_row in zip(child.matrix_local, child_before["matrix"]):
+        assert_vector_close(actual_row, expected_row, "Reparented child matrix")
+    assert math.isclose(child.length, child_length, rel_tol=0.0, abs_tol=1e-6)
+
+    connected = armature.bones["ConnectedKeep"]
+    assert connected.parent == armature.bones["Root"]
+    assert connected.use_connect is True
+    assert_vector_close(connected.head_local, connected_before["head"], "Connected head")
+    assert_vector_close(connected.tail_local, connected_before["tail"], "Connected tail")
+    assert bpy.context.view_layer.objects.active == mesh_obj
+    assert {obj.name for obj in bpy.context.selected_objects} == {
+        armature_obj.name,
+        mesh_obj.name,
+    }
+
+    # Background mode needs a post-operation checkpoint before Undo.
+    bpy.ops.ed.undo_push(message="After Delete Unregistered Bones")
+    bpy.ops.ed.undo()
+    armature = bpy.data.armatures["BoneCleanupTestArmature"]
+    assert "DoomedParent" in armature.bones
+    assert "NonDeformControl" in armature.bones
+
+    bpy.ops.object.select_all(action="DESELECT")
+    orphan_mesh = bpy.data.meshes.new("OrphanBoneCleanupTestMesh")
+    orphan_obj = bpy.data.objects.new("OrphanBoneCleanupTestMesh", orphan_mesh)
+    bpy.context.scene.collection.objects.link(orphan_obj)
+    orphan_obj.select_set(True)
+    bpy.context.view_layer.objects.active = orphan_obj
+    assert bpy.ops.panda_tool.scan_unregistered_bones() == {"CANCELLED"}
+    orphan_obj.select_set(False)
+
+
 def main():
     panda_tool.register()
     bpy.context.preferences.edit.use_global_undo = True
 
     test_disconnect_bones()
     test_remove_unused_vertex_groups()
+    test_property_recovery_after_update()
+    test_delete_unregistered_bones()
 
     armature = bpy.data.armatures.new("PandaToolTestArmature")
     obj = bpy.data.objects.new("PandaToolTestArmature", armature)
@@ -294,6 +474,7 @@ def main():
 
     panda_tool.unregister()
     assert not hasattr(bpy.types.Object, "panda_unused_vertex_groups")
+    assert not hasattr(bpy.types.Object, "panda_unregistered_bones")
     print("Panda Tool Blender integration test: OK")
 
 

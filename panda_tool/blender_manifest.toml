@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "panda_tool"
-version = "0.3.0"
+version = "0.4.0"
 name = "Panda Tool"
 tagline = "Practical utilities for animation and rigging"
 maintainer = "Gonsaku"

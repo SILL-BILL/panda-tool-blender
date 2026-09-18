@@ -62,6 +62,9 @@ class PANDA_OT_scan_unused_vertex_groups(bpy.types.Operator):
             self.report({"INFO"}, "Select an active Mesh Object.")
             return {"CANCELLED"}
 
+        # An in-place extension update can leave RNA properties removed by
+        # the previous version's unregister callback. Restore them on demand.
+        register_properties()
         _refresh_scan_results(obj)
         count = len(obj.panda_unused_vertex_groups)
         if count:
@@ -88,8 +91,11 @@ class PANDA_OT_remove_unused_vertex_groups(bpy.types.Operator):
         return (
             obj is not None
             and obj.type == "MESH"
-            and obj.panda_vertex_group_scan_complete
-            and any(item.remove for item in obj.panda_unused_vertex_groups)
+            and getattr(obj, "panda_vertex_group_scan_complete", False)
+            and any(
+                item.remove
+                for item in getattr(obj, "panda_unused_vertex_groups", ())
+            )
         )
 
     def execute(self, context):
@@ -97,7 +103,7 @@ class PANDA_OT_remove_unused_vertex_groups(bpy.types.Operator):
         if obj is None or obj.type != "MESH":
             self.report({"INFO"}, "Select an active Mesh Object.")
             return {"CANCELLED"}
-        if not obj.panda_vertex_group_scan_complete:
+        if not getattr(obj, "panda_vertex_group_scan_complete", False):
             self.report({"INFO"}, "Scan unused vertex groups first.")
             return {"CANCELLED"}
 
@@ -147,21 +153,28 @@ CLASSES = (
 
 
 def register_properties():
-    bpy.types.Object.panda_unused_vertex_groups = CollectionProperty(
-        type=PANDA_PG_unused_vertex_group,
-        options={"SKIP_SAVE"},
-    )
-    bpy.types.Object.panda_vertex_group_scan_complete = BoolProperty(
-        default=False,
-        options={"SKIP_SAVE"},
-    )
-    bpy.types.Object.panda_vertex_group_status = StringProperty(
-        default="",
-        options={"SKIP_SAVE"},
-    )
+    if not hasattr(bpy.types.Object, "panda_unused_vertex_groups"):
+        bpy.types.Object.panda_unused_vertex_groups = CollectionProperty(
+            type=PANDA_PG_unused_vertex_group,
+            options={"SKIP_SAVE"},
+        )
+    if not hasattr(bpy.types.Object, "panda_vertex_group_scan_complete"):
+        bpy.types.Object.panda_vertex_group_scan_complete = BoolProperty(
+            default=False,
+            options={"SKIP_SAVE"},
+        )
+    if not hasattr(bpy.types.Object, "panda_vertex_group_status"):
+        bpy.types.Object.panda_vertex_group_status = StringProperty(
+            default="",
+            options={"SKIP_SAVE"},
+        )
 
 
 def unregister_properties():
-    del bpy.types.Object.panda_vertex_group_status
-    del bpy.types.Object.panda_vertex_group_scan_complete
-    del bpy.types.Object.panda_unused_vertex_groups
+    for property_name in (
+        "panda_vertex_group_status",
+        "panda_vertex_group_scan_complete",
+        "panda_unused_vertex_groups",
+    ):
+        if hasattr(bpy.types.Object, property_name):
+            delattr(bpy.types.Object, property_name)

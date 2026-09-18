@@ -11,8 +11,65 @@ class PANDA_PT_rig_tools(bpy.types.Panel):
     bl_category = "Panda Tool"
 
     def draw(self, context):
-        self.layout.operator("panda_tool.create_anchor", icon="BONE_DATA")
-        self.layout.operator("panda_tool.disconnect_bones", icon="UNLINKED")
+        layout = self.layout
+        layout.operator("panda_tool.create_anchor", icon="BONE_DATA")
+        layout.operator("panda_tool.disconnect_bones", icon="UNLINKED")
+
+        layout.separator()
+        obj = context.active_object
+        is_mesh_object_mode = (
+            obj is not None and obj.type == "MESH" and obj.mode == "OBJECT"
+        )
+        scan_row = layout.row()
+        scan_row.enabled = is_mesh_object_mode
+        scan_row.operator(
+            "panda_tool.scan_unregistered_bones",
+            icon="VIEWZOOM",
+        )
+
+        if not is_mesh_object_mode:
+            layout.label(
+                text="Select a Mesh in Object Mode for cleanup.",
+                icon="INFO",
+            )
+            return
+        if not getattr(obj, "panda_bone_cleanup_scan_complete", False):
+            return
+
+        layout.label(text="Bones Missing Vertex Groups")
+        for item in obj.panda_unregistered_bones:
+            row = layout.row(align=True)
+            row.prop(item, "remove", text=item.bone_name)
+            if not item.is_deform:
+                row.label(text="Non-Deform", icon="LOCKED")
+
+        count = len(obj.panda_unregistered_bones)
+        layout.label(text=f"{count} candidate{'s' if count != 1 else ''} found.")
+
+        selection_row = layout.row(align=True)
+        selection_row.enabled = count > 0
+        select_all = selection_row.operator(
+            "panda_tool.set_unregistered_bone_selection",
+            text="All",
+        )
+        select_all.select = True
+        select_none = selection_row.operator(
+            "panda_tool.set_unregistered_bone_selection",
+            text="None",
+        )
+        select_none.select = False
+
+        delete_row = layout.row()
+        delete_row.enabled = count > 0 and any(
+            item.remove for item in obj.panda_unregistered_bones
+        )
+        delete_row.operator(
+            "panda_tool.delete_unregistered_bones",
+            icon="TRASH",
+        )
+
+        if obj.panda_bone_cleanup_status:
+            layout.label(text=obj.panda_bone_cleanup_status, icon="INFO")
 
 
 class PANDA_PT_vertex_group_tools(bpy.types.Panel):
@@ -34,7 +91,7 @@ class PANDA_PT_vertex_group_tools(bpy.types.Panel):
         if not is_mesh:
             layout.label(text="Select an active Mesh Object.", icon="INFO")
             return
-        if not obj.panda_vertex_group_scan_complete:
+        if not getattr(obj, "panda_vertex_group_scan_complete", False):
             return
 
         layout.separator()
