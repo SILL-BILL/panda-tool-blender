@@ -3,7 +3,7 @@
 bl_info = {
     "name": "Panda Tool",
     "author": "Gonsaku",
-    "version": (0, 5, 0),
+    "version": (0, 6, 0),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > Panda Tool",
     "description": "Small workflow utilities for animation and rigging",

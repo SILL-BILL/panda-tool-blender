@@ -1,8 +1,8 @@
 # Panda Tool Blender
 
 Panda Tool is a small collection of practical Blender utilities for animation
-and rigging. Version 0.5.0 adds **Panda Apply Modifier** to the existing rigging
-and cleanup tools.
+and rigging. Version 0.6.0 adds current-pose Armature Modifier support to
+**Panda Apply Modifier**.
 
 ## Supported Blender versions
 
@@ -13,7 +13,7 @@ Blender 3.6 is not officially supported.
 
 ## Installation
 
-1. Download or build `panda_tool-0.5.0.zip`.
+1. Download or build `panda_tool-0.6.0.zip`.
 2. In Blender, open **Edit > Preferences > Get Extensions**.
 3. Open the menu, choose **Install from Disk**, and select the ZIP.
 4. Enable **Panda Tool** if it is not enabled automatically.
@@ -35,10 +35,15 @@ interpolation, relative-key relationships, custom properties, Actions, and
 Drivers are preserved. A failure removes temporary data and leaves the original
 Object unchanged. The operation supports Undo.
 
-Only one Modifier and one active Mesh are processed at a time. Armature
-Modifiers are intentionally rejected in version 0.5.0. NLA tracks on the Shape
-Key datablock and external references that directly target the old Shape Key
-datablock are not migrated. Geometry Nodes, Boolean, Decimate, and similar
+For an Armature Modifier, the currently evaluated pose is baked into the Basis
+and every Shape Key. The Armature, its pose, animation, constraints, and the
+Mesh parenting relationship are not changed. One Armature Modifier with one
+valid Armature target is supported per Mesh; a confirmation dialog is shown
+before applying it.
+
+Only one Modifier and one active Mesh are processed at a time. Shape Key NLA
+tracks and external references that directly target the old Shape Key datablock
+are not migrated. Geometry Nodes, Boolean, Decimate, and similar
 topology-dependent Modifiers are accepted only when every Shape Key produces
 exactly the same topology.
 
@@ -123,7 +128,7 @@ blender --background --python tests/blender_integration.py
 
 Run `build.bat` from the repository root, or double-click it in Explorer. The
 script uses Blender's standard Extension build command and writes the package
-to `dist/panda_tool-0.5.0.zip`:
+to `dist/panda_tool-0.6.0.zip`:
 
 ```powershell
 .\build.bat

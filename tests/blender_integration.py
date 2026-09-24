@@ -565,20 +565,385 @@ def test_apply_modifier_topology_mismatch_is_safe():
     assert_no_apply_modifier_temporary_data()
 
 
-def test_apply_modifier_rejects_armature_modifier():
-    mesh = create_cube_mesh("ApplyModifierArmatureMesh")
-    obj = bpy.data.objects.new("ApplyModifierArmature", mesh)
+def create_apply_modifier_armature(name):
+    armature = bpy.data.armatures.new(f"{name}Data")
+    armature_object = bpy.data.objects.new(name, armature)
+    bpy.context.scene.collection.objects.link(armature_object)
+    select_only(armature_object)
+    bpy.ops.object.mode_set(mode="EDIT")
+    root = create_bone(armature.edit_bones, "Root", (0, 0, 0), (0, 1, 0))
+    forearm = create_bone(
+        armature.edit_bones,
+        "Forearm",
+        (0, 1, 0),
+        (0, 2, 0),
+        parent=root,
+        connected=True,
+    )
+    create_bone(
+        armature.edit_bones,
+        "Hand",
+        (0, 2, 0),
+        (0, 3, 0),
+        parent=forearm,
+        connected=True,
+    )
+    bpy.ops.object.mode_set(mode="POSE")
+    armature_object.pose.bones["Root"].rotation_mode = "XYZ"
+    armature_object.pose.bones["Root"].rotation_euler.z = math.radians(12.0)
+    armature_object.pose.bones["Forearm"].rotation_mode = "XYZ"
+    armature_object.pose.bones["Forearm"].rotation_euler.z = math.radians(28.0)
+    armature_object.pose.bones["Hand"].rotation_mode = "XYZ"
+    armature_object.pose.bones["Hand"].rotation_euler.z = math.radians(-17.0)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    armature.pose_position = "POSE"
+    bpy.context.view_layer.update()
+    return armature_object
+
+
+def create_apply_modifier_skinned_object(name, armature_object, parent=False):
+    mesh = bpy.data.meshes.new(f"{name}Mesh")
+    mesh.from_pydata(
+        [
+            (-0.3, 0.0, 0.0),
+            (0.3, 0.0, 0.0),
+            (-0.3, 1.0, 0.0),
+            (0.3, 1.0, 0.0),
+            (-0.3, 2.0, 0.0),
+            (0.3, 2.0, 0.0),
+            (-0.3, 3.0, 0.0),
+            (0.3, 3.0, 0.0),
+        ],
+        [],
+        [(0, 1, 3, 2), (2, 3, 5, 4), (4, 5, 7, 6)],
+    )
+    obj = bpy.data.objects.new(name, mesh)
     bpy.context.scene.collection.objects.link(obj)
-    select_only(obj)
+
+    root = obj.vertex_groups.new(name="Root")
+    forearm = obj.vertex_groups.new(name="Forearm")
+    hand = obj.vertex_groups.new(name="Hand")
+    root.add([0, 1], 1.0, "REPLACE")
+    root.add([2, 3], 0.25, "REPLACE")
+    forearm.add([2, 3], 0.75, "REPLACE")
+    forearm.add([4, 5], 0.4, "REPLACE")
+    hand.add([4, 5], 0.6, "REPLACE")
+    hand.add([6, 7], 1.0, "REPLACE")
+
+    if parent:
+        obj.parent = armature_object
+        obj.parent_type = "OBJECT"
+        obj.matrix_parent_inverse = armature_object.matrix_world.inverted()
+
     modifier = obj.modifiers.new("Armature", "ARMATURE")
+    modifier.object = armature_object
+    modifier.use_vertex_groups = True
+    modifier.use_bone_envelopes = False
+    return obj, modifier
+
+
+def mesh_topology_signature(mesh):
+    return (
+        tuple(tuple(edge.vertices) for edge in mesh.edges),
+        tuple(tuple(polygon.vertices) for polygon in mesh.polygons),
+    )
+
+
+def assert_coordinate_lists_close(actual, expected, message):
+    assert len(actual) == len(expected), message
+    for index, (actual_coordinate, expected_coordinate) in enumerate(
+        zip(actual, expected)
+    ):
+        assert_vector_close(
+            actual_coordinate,
+            expected_coordinate,
+            f"{message} vertex {index}",
+        )
+
+
+def evaluated_armature_coordinates(
+    name,
+    armature_object,
+    coordinates,
+    preserve_volume,
+    parent,
+):
+    reference, modifier = create_apply_modifier_skinned_object(
+        name,
+        armature_object,
+        parent=parent,
+    )
+    for vertex, coordinate in zip(reference.data.vertices, coordinates):
+        vertex.co = coordinate
+    modifier.use_deform_preserve_volume = preserve_volume
+    reference.data.update()
+    bpy.context.view_layer.update()
+    evaluated_object = reference.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    evaluated_mesh = evaluated_object.to_mesh()
+    try:
+        result = [vertex.co.copy() for vertex in evaluated_mesh.vertices]
+    finally:
+        evaluated_object.to_mesh_clear()
+    reference_mesh = reference.data
+    bpy.data.objects.remove(reference, do_unlink=True)
+    bpy.data.meshes.remove(reference_mesh)
+    return result
+
+
+def test_apply_armature_matches_standard_apply():
+    armature_object = create_apply_modifier_armature("ApplyArmatureStandardRig")
+    for preserve_volume in (False, True):
+        suffix = "Preserve" if preserve_volume else "Linear"
+        standard, standard_modifier = create_apply_modifier_skinned_object(
+            f"ArmatureStandard{suffix}",
+            armature_object,
+        )
+        panda, panda_modifier = create_apply_modifier_skinned_object(
+            f"ArmaturePanda{suffix}",
+            armature_object,
+        )
+        standard_modifier.use_deform_preserve_volume = preserve_volume
+        panda_modifier.use_deform_preserve_volume = preserve_volume
+        if preserve_volume:
+            for candidate, candidate_modifier in (
+                (standard, standard_modifier),
+                (panda, panda_modifier),
+            ):
+                mask = candidate.vertex_groups.new(name="ArmatureMask")
+                mask.add([0, 1, 2, 3], 1.0, "REPLACE")
+                mask.add([4, 5, 6, 7], 0.4, "REPLACE")
+                candidate_modifier.vertex_group = mask.name
+                candidate_modifier.invert_vertex_group = True
+
+        original_coordinates = [vertex.co.copy() for vertex in panda.data.vertices]
+        select_only(standard)
+        assert bpy.ops.object.modifier_apply(modifier=standard_modifier.name) == {
+            "FINISHED"
+        }
+        select_only(panda)
+        panda.panda_apply_modifier_name = panda_modifier.name
+        assert bpy.ops.panda.apply_modifier() == {"FINISHED"}
+
+        standard_coordinates = [vertex.co.copy() for vertex in standard.data.vertices]
+        panda_coordinates = [vertex.co.copy() for vertex in panda.data.vertices]
+        assert_coordinate_lists_close(
+            panda_coordinates,
+            standard_coordinates,
+            f"Armature standard Apply comparison ({suffix})",
+        )
+        assert mesh_topology_signature(panda.data) == mesh_topology_signature(
+            standard.data
+        )
+        assert any(
+            (actual - original).length > 1e-4
+            for actual, original in zip(panda_coordinates, original_coordinates)
+        )
+        assert panda.modifiers.get("Armature") is None
+        assert_no_apply_modifier_temporary_data()
+
+    armature_object.data.pose_position = "REST"
+    standard, standard_modifier = create_apply_modifier_skinned_object(
+        "ArmatureStandardRest",
+        armature_object,
+    )
+    panda, panda_modifier = create_apply_modifier_skinned_object(
+        "ArmaturePandaRest",
+        armature_object,
+    )
+    original_coordinates = [vertex.co.copy() for vertex in panda.data.vertices]
+    select_only(standard)
+    assert bpy.ops.object.modifier_apply(modifier=standard_modifier.name) == {
+        "FINISHED"
+    }
+    select_only(panda)
+    panda.panda_apply_modifier_name = panda_modifier.name
+    assert bpy.ops.panda.apply_modifier() == {"FINISHED"}
+    standard_coordinates = [vertex.co.copy() for vertex in standard.data.vertices]
+    panda_coordinates = [vertex.co.copy() for vertex in panda.data.vertices]
+    assert_coordinate_lists_close(
+        panda_coordinates,
+        standard_coordinates,
+        "Armature Rest Position standard Apply comparison",
+    )
+    assert_coordinate_lists_close(
+        panda_coordinates,
+        original_coordinates,
+        "Armature Rest Position does not bake pose transforms",
+    )
+    armature_object.data.pose_position = "POSE"
+
+
+def test_apply_armature_preserves_shape_keys_rig_and_parenting():
+    armature_object = create_apply_modifier_armature("ApplyArmatureShapeRig")
+    armature_object["panda_test"] = "unchanged"
+    armature_action = bpy.data.actions.new("ApplyArmatureRigAction")
+    armature_object.animation_data_create().action = armature_action
+    constraint = armature_object.pose.bones["Hand"].constraints.new("LIMIT_ROTATION")
+    constraint.name = "PandaPreservationConstraint"
+    constraint.use_limit_x = True
+    constraint.min_x = -0.25
+    constraint.max_x = 0.25
+
+    obj, modifier = create_apply_modifier_skinned_object(
+        "ApplyArmatureShapeMesh",
+        armature_object,
+        parent=True,
+    )
+    modifier.use_deform_preserve_volume = True
+    basis = obj.shape_key_add(name="Basis")
+    smile = obj.shape_key_add(name="Smile")
+    blink = obj.shape_key_add(name="Blink")
+    smile.data[6].co.x += 0.45
+    smile.data[7].co.x += 0.45
+    blink.data[0].co.z += 0.3
+    blink.data[1].co.z += 0.3
+    blink.relative_key = smile
+    smile.value = 0.35
+    smile.slider_min = -1.0
+    smile.slider_max = 2.0
+    blink.mute = True
+    smile.vertex_group = "Hand"
+    obj.data.shape_keys["panda_test"] = 64
+    shape_action = bpy.data.actions.new("ApplyArmatureShapeAction")
+    obj.data.shape_keys.animation_data_create().action = shape_action
+    driver_fcurve = blink.driver_add("value")
+    driver_fcurve.driver.expression = "0.625"
+
+    raw_coordinates = {
+        block.name: [point.co.copy() for point in block.data]
+        for block in obj.data.shape_keys.key_blocks
+    }
+    expected_coordinates = {
+        name: evaluated_armature_coordinates(
+            f"Expected{name}",
+            armature_object,
+            coordinates,
+            preserve_volume=True,
+            parent=True,
+        )
+        for name, coordinates in raw_coordinates.items()
+    }
+
+    parent_before = obj.parent
+    parent_type_before = obj.parent_type
+    parent_inverse_before = obj.matrix_parent_inverse.copy()
+    armature_data_before = armature_object.data
+    armature_matrix_before = armature_object.matrix_world.copy()
+    pose_before = {
+        bone.name: bone.matrix_basis.copy() for bone in armature_object.pose.bones
+    }
+    constraint_before = (
+        constraint.name,
+        constraint.use_limit_x,
+        constraint.min_x,
+        constraint.max_x,
+    )
+
+    select_only(obj)
     obj.panda_apply_modifier_name = modifier.name
+    bpy.ops.ed.undo_push(message="Before Panda Apply Armature")
+    assert bpy.ops.panda.apply_modifier() == {"FINISHED"}
+
+    keys = obj.data.shape_keys
+    assert obj.modifiers.get("Armature") is None
+    assert [block.name for block in keys.key_blocks] == ["Basis", "Smile", "Blink"]
+    for name, expected in expected_coordinates.items():
+        actual = [point.co.copy() for point in keys.key_blocks[name].data]
+        assert_coordinate_lists_close(actual, expected, f"Armature Shape Key {name}")
+    assert keys.key_blocks["Blink"].relative_key == keys.key_blocks["Smile"]
+    assert math.isclose(keys.key_blocks["Smile"].value, 0.35, abs_tol=1e-6)
+    assert math.isclose(keys.key_blocks["Smile"].slider_min, -1.0, abs_tol=1e-6)
+    assert math.isclose(keys.key_blocks["Smile"].slider_max, 2.0, abs_tol=1e-6)
+    assert keys.key_blocks["Blink"].mute
+    assert keys.key_blocks["Smile"].vertex_group == "Hand"
+    assert keys["panda_test"] == 64
+    assert keys.animation_data.action == shape_action
+    drivers = list(keys.animation_data.drivers)
+    assert len(drivers) == 1
+    assert drivers[0].data_path == 'key_blocks["Blink"].value'
+    assert drivers[0].driver.expression == "0.625"
+
+    assert [group.name for group in obj.vertex_groups] == ["Root", "Forearm", "Hand"]
+    assert all(vertex.groups for vertex in obj.data.vertices)
+    assert obj.parent == parent_before
+    assert obj.parent_type == parent_type_before
+    for actual_row, expected_row in zip(obj.matrix_parent_inverse, parent_inverse_before):
+        assert_vector_close(actual_row, expected_row, "Parent inverse")
+
+    assert armature_object.data == armature_data_before
+    for actual_row, expected_row in zip(
+        armature_object.matrix_world,
+        armature_matrix_before,
+    ):
+        assert_vector_close(actual_row, expected_row, "Armature object matrix")
+    for bone_name, expected_matrix in pose_before.items():
+        for actual_row, expected_row in zip(
+            armature_object.pose.bones[bone_name].matrix_basis,
+            expected_matrix,
+        ):
+            assert_vector_close(actual_row, expected_row, f"{bone_name} pose")
+    assert armature_object.animation_data.action == armature_action
+    assert armature_object["panda_test"] == "unchanged"
+    current_constraint = armature_object.pose.bones["Hand"].constraints[
+        "PandaPreservationConstraint"
+    ]
+    assert (
+        current_constraint.name,
+        current_constraint.use_limit_x,
+        current_constraint.min_x,
+        current_constraint.max_x,
+    ) == constraint_before
+    assert_no_apply_modifier_temporary_data()
+
+    bpy.ops.ed.undo_push(message="After Panda Apply Armature")
+    bpy.ops.ed.undo()
+    obj = bpy.data.objects["ApplyArmatureShapeMesh"]
+    assert obj.modifiers.get("Armature") is not None
+    assert [block.name for block in obj.data.shape_keys.key_blocks] == [
+        "Basis",
+        "Smile",
+        "Blink",
+    ]
+
+
+def test_apply_armature_validation_is_safe():
+    armature_object = create_apply_modifier_armature("ApplyArmatureValidationRig")
+
+    missing, missing_modifier = create_apply_modifier_skinned_object(
+        "ApplyArmatureMissingTarget",
+        armature_object,
+    )
+    missing_modifier.object = None
+    missing.panda_apply_modifier_name = missing_modifier.name
+    missing_mesh = missing.data
+    select_only(missing)
     try:
         result = bpy.ops.panda.apply_modifier()
     except RuntimeError as exc:
-        assert "Armature Modifiers are not supported" in str(exc)
+        assert "has no valid target" in str(exc)
     else:
         assert result == {"CANCELLED"}
-    assert obj.modifiers.get("Armature") is not None
+    assert missing.data == missing_mesh
+    assert missing.modifiers.get("Armature") is not None
+
+    multiple, first_modifier = create_apply_modifier_skinned_object(
+        "ApplyArmatureMultiple",
+        armature_object,
+    )
+    second_modifier = multiple.modifiers.new("ArmatureSecond", "ARMATURE")
+    second_modifier.object = armature_object
+    multiple.panda_apply_modifier_name = first_modifier.name
+    multiple_mesh = multiple.data
+    select_only(multiple)
+    try:
+        result = bpy.ops.panda.apply_modifier()
+    except RuntimeError as exc:
+        assert "Multiple Armature Modifiers" in str(exc)
+    else:
+        assert result == {"CANCELLED"}
+    assert multiple.data == multiple_mesh
+    assert len([item for item in multiple.modifiers if item.type == "ARMATURE"]) == 2
+    assert_no_apply_modifier_temporary_data()
 
 
 def main():
@@ -589,7 +954,9 @@ def main():
     test_apply_modifier_preserves_shape_keys_and_driver()
     test_apply_mirror_preserves_asymmetric_shape()
     test_apply_modifier_topology_mismatch_is_safe()
-    test_apply_modifier_rejects_armature_modifier()
+    test_apply_armature_matches_standard_apply()
+    test_apply_armature_preserves_shape_keys_rig_and_parenting()
+    test_apply_armature_validation_is_safe()
     test_disconnect_bones()
     test_remove_unused_vertex_groups()
     test_property_recovery_after_update()

@@ -268,6 +268,25 @@ class PANDA_OT_apply_modifier(bpy.types.Operator):
     bl_description = "Apply one Modifier while preserving Shape Keys"
     bl_options = {"REGISTER", "UNDO"}
 
+    def invoke(self, context, event):
+        source_object = context.active_object
+        modifier = None
+        if source_object is not None and source_object.type == "MESH":
+            modifier = source_object.modifiers.get(
+                getattr(source_object, "panda_apply_modifier_name", "")
+            )
+        if modifier is not None and modifier.type == "ARMATURE":
+            return context.window_manager.invoke_props_dialog(self, width=440)
+        return self.execute(context)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text="Apply Armature Modifier?", icon="ARMATURE_DATA")
+        layout.separator()
+        layout.label(text="The currently evaluated Armature pose will be baked")
+        layout.label(text="into the Basis and all Shape Keys.")
+        layout.label(text="The Armature itself will not be modified.")
+
     def execute(self, context):
         source_object = context.active_object
         if source_object is None:
@@ -290,11 +309,22 @@ class PANDA_OT_apply_modifier(bpy.types.Operator):
             self.report({"ERROR"}, "Panda Apply Modifier: Select a valid Modifier.")
             return {"CANCELLED"}
         if modifier.type == "ARMATURE":
-            self.report(
-                {"ERROR"},
-                "Panda Apply Modifier: Armature Modifiers are not supported.",
-            )
-            return {"CANCELLED"}
+            armature_modifiers = [
+                item for item in source_object.modifiers if item.type == "ARMATURE"
+            ]
+            if len(armature_modifiers) > 1:
+                self.report(
+                    {"ERROR"},
+                    "Panda Apply Modifier: Multiple Armature Modifiers are not "
+                    "supported yet.",
+                )
+                return {"CANCELLED"}
+            if modifier.object is None or modifier.object.type != "ARMATURE":
+                self.report(
+                    {"ERROR"},
+                    "Panda Apply Modifier: Armature Modifier has no valid target.",
+                )
+                return {"CANCELLED"}
 
         source_mesh = source_object.data
         source_key = source_mesh.shape_keys

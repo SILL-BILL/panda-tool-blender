@@ -41,7 +41,6 @@ class PANDA_PT_apply_modifier(bpy.types.Panel):
             is_object_mode
             and has_modifiers
             and selected is not None
-            and not is_armature
         )
         apply_row.operator("panda.apply_modifier", icon="CHECKMARK")
 
@@ -50,7 +49,8 @@ class PANDA_PT_apply_modifier(bpy.types.Panel):
         elif not has_modifiers:
             layout.label(text="This Object has no Modifiers.", icon="INFO")
         elif is_armature:
-            layout.label(text="Armature Modifiers are not supported.", icon="ERROR")
+            layout.label(text="Current Armature pose will be baked.", icon="ERROR")
+            layout.label(text="Armature data itself will not be modified.")
 
 
 class PANDA_PT_rig_tools(bpy.types.Panel):
