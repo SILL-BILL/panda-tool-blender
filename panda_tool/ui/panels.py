@@ -3,6 +3,56 @@
 import bpy
 
 
+class PANDA_PT_apply_modifier(bpy.types.Panel):
+    bl_label = "Panda Apply Modifier"
+    bl_idname = "PANDA_PT_apply_modifier"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Panda Tool"
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.active_object
+        is_mesh = obj is not None and obj.type == "MESH"
+        is_object_mode = is_mesh and obj.mode == "OBJECT"
+        has_modifiers = is_mesh and len(obj.modifiers) > 0
+
+        if not is_mesh:
+            layout.label(text="Select an active Mesh Object.", icon="INFO")
+            return
+
+        layout.prop_search(
+            obj,
+            "panda_apply_modifier_name",
+            obj,
+            "modifiers",
+            text="Modifier",
+        )
+
+        shape_keys = obj.data.shape_keys
+        shape_key_count = len(shape_keys.key_blocks) if shape_keys else 0
+        layout.label(text=f"Shape Keys: {shape_key_count}")
+        layout.label(text=f"Vertices: {len(obj.data.vertices)}")
+
+        selected = obj.modifiers.get(obj.panda_apply_modifier_name)
+        is_armature = selected is not None and selected.type == "ARMATURE"
+        apply_row = layout.row()
+        apply_row.enabled = (
+            is_object_mode
+            and has_modifiers
+            and selected is not None
+            and not is_armature
+        )
+        apply_row.operator("panda.apply_modifier", icon="CHECKMARK")
+
+        if not is_object_mode:
+            layout.label(text="Use Object Mode.", icon="INFO")
+        elif not has_modifiers:
+            layout.label(text="This Object has no Modifiers.", icon="INFO")
+        elif is_armature:
+            layout.label(text="Armature Modifiers are not supported.", icon="ERROR")
+
+
 class PANDA_PT_rig_tools(bpy.types.Panel):
     bl_label = "Rig"
     bl_idname = "PANDA_PT_rig_tools"

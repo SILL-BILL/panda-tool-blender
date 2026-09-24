@@ -3,7 +3,7 @@
 bl_info = {
     "name": "Panda Tool",
     "author": "Gonsaku",
-    "version": (0, 4, 0),
+    "version": (0, 5, 0),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > Panda Tool",
     "description": "Small workflow utilities for animation and rigging",
@@ -17,6 +17,9 @@ _REGISTERED_UI_CLASSES = ()
 def register():
     import bpy
     from .operators import CLASSES as operator_classes
+    from .operators.apply_modifier import (
+        register_properties as register_apply_modifier_properties,
+    )
     from .operators.delete_unregistered_bones import (
         register_properties as register_bone_cleanup_properties,
     )
@@ -31,6 +34,7 @@ def register():
     # them, and all RNA properties must exist before Blender can draw panels.
     for cls in _REGISTERED_OPERATOR_CLASSES:
         bpy.utils.register_class(cls)
+    register_apply_modifier_properties()
     register_properties()
     register_bone_cleanup_properties()
     for cls in _REGISTERED_UI_CLASSES:
@@ -39,6 +43,9 @@ def register():
 
 def unregister():
     import bpy
+    from .operators.apply_modifier import (
+        unregister_properties as unregister_apply_modifier_properties,
+    )
     from .operators.delete_unregistered_bones import (
         unregister_properties as unregister_bone_cleanup_properties,
     )
@@ -49,6 +56,7 @@ def unregister():
         bpy.utils.unregister_class(cls)
     unregister_bone_cleanup_properties()
     unregister_properties()
+    unregister_apply_modifier_properties()
     for cls in reversed(_REGISTERED_OPERATOR_CLASSES):
         bpy.utils.unregister_class(cls)
     _REGISTERED_UI_CLASSES = ()

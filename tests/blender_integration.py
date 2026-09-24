@@ -373,10 +373,223 @@ def test_delete_unregistered_bones():
     orphan_obj.select_set(False)
 
 
+def create_cube_mesh(name, center=(0.0, 0.0, 0.0)):
+    x, y, z = center
+    vertices = [
+        (x - 1, y - 1, z - 1),
+        (x + 1, y - 1, z - 1),
+        (x + 1, y + 1, z - 1),
+        (x - 1, y + 1, z - 1),
+        (x - 1, y - 1, z + 1),
+        (x + 1, y - 1, z + 1),
+        (x + 1, y + 1, z + 1),
+        (x - 1, y + 1, z + 1),
+    ]
+    faces = [
+        (0, 1, 2, 3),
+        (4, 7, 6, 5),
+        (0, 4, 5, 1),
+        (1, 5, 6, 2),
+        (2, 6, 7, 3),
+        (4, 0, 3, 7),
+    ]
+    mesh = bpy.data.meshes.new(name)
+    mesh.from_pydata(vertices, [], faces)
+    return mesh
+
+
+def select_only(obj):
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+
+
+def assert_no_apply_modifier_temporary_data():
+    assert not any(
+        obj.name.startswith("PandaApplyModifierTemp") for obj in bpy.data.objects
+    )
+    assert not any(
+        mesh.name.startswith("PandaApplyModifierTemp") for mesh in bpy.data.meshes
+    )
+
+
+def test_apply_modifier_without_shape_keys():
+    mesh = create_cube_mesh("ApplyModifierNoKeysMesh")
+    obj = bpy.data.objects.new("ApplyModifierNoKeys", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    select_only(obj)
+    modifier = obj.modifiers.new("Triangulate", "TRIANGULATE")
+    obj.panda_apply_modifier_name = modifier.name
+
+    assert bpy.ops.panda.apply_modifier() == {"FINISHED"}
+    assert obj.modifiers.get("Triangulate") is None
+    assert obj.data.shape_keys is None
+    assert len(obj.data.polygons) == 12
+    assert_no_apply_modifier_temporary_data()
+
+
+def test_apply_modifier_preserves_shape_keys_and_driver():
+    mesh = bpy.data.meshes.new("ApplyModifierShapeKeysMesh")
+    mesh.from_pydata(
+        [(-1, -1, 0), (1, -1, 0), (1, 1, 0), (-1, 1, 0)],
+        [],
+        [(0, 1, 2, 3)],
+    )
+    obj = bpy.data.objects.new("ApplyModifierShapeKeys", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    select_only(obj)
+
+    basis = obj.shape_key_add(name="Basis")
+    smile = obj.shape_key_add(name="Smile")
+    blink = obj.shape_key_add(name="Blink")
+    smile.data[2].co.z = 1.0
+    blink.data[0].co.z = 0.5
+    blink.relative_key = smile
+    smile.value = 0.35
+    smile.slider_min = -1.0
+    smile.slider_max = 2.0
+    smile.mute = True
+    obj.vertex_groups.new(name="Face")
+    smile.vertex_group = "Face"
+    mesh.shape_keys["panda_test"] = 42
+    action = bpy.data.actions.new("ApplyModifierShapeKeyAction")
+    mesh.shape_keys.animation_data_create().action = action
+
+    driver_fcurve = blink.driver_add("value")
+    driver_fcurve.driver.expression = "0.75"
+
+    modifier = obj.modifiers.new("Subdivision", "SUBSURF")
+    modifier.levels = 1
+    modifier.subdivision_type = "CATMULL_CLARK"
+    obj.panda_apply_modifier_name = modifier.name
+
+    bpy.ops.ed.undo_push(message="Before Panda Apply Modifier")
+    assert bpy.ops.panda.apply_modifier() == {"FINISHED"}
+    keys = obj.data.shape_keys
+    assert obj.modifiers.get("Subdivision") is None
+    assert len(obj.data.vertices) > 4
+    assert [block.name for block in keys.key_blocks] == ["Basis", "Smile", "Blink"]
+    assert keys.key_blocks["Blink"].relative_key == keys.key_blocks["Smile"]
+    assert math.isclose(keys.key_blocks["Smile"].value, 0.35, abs_tol=1e-6)
+    assert math.isclose(keys.key_blocks["Smile"].slider_min, -1.0, abs_tol=1e-6)
+    assert math.isclose(keys.key_blocks["Smile"].slider_max, 2.0, abs_tol=1e-6)
+    assert keys.key_blocks["Smile"].mute
+    assert keys.key_blocks["Smile"].vertex_group == "Face"
+    assert keys["panda_test"] == 42
+    assert keys.animation_data.action == action
+    assert any(point.co.z > 0.1 for point in keys.key_blocks["Smile"].data)
+    drivers = list(keys.animation_data.drivers)
+    assert len(drivers) == 1
+    assert drivers[0].data_path == 'key_blocks["Blink"].value'
+    assert drivers[0].driver.expression == "0.75"
+    assert len(bpy.data.shape_keys) == 1
+    assert_no_apply_modifier_temporary_data()
+
+    bpy.ops.ed.undo_push(message="After Panda Apply Modifier")
+    bpy.ops.ed.undo()
+    obj = bpy.data.objects["ApplyModifierShapeKeys"]
+    assert obj.modifiers.get("Subdivision") is not None
+    assert len(obj.data.vertices) == 4
+    assert [block.name for block in obj.data.shape_keys.key_blocks] == [
+        "Basis",
+        "Smile",
+        "Blink",
+    ]
+    assert len(bpy.data.shape_keys) == 1
+
+
+def test_apply_mirror_preserves_asymmetric_shape():
+    mesh = bpy.data.meshes.new("ApplyModifierMirrorMesh")
+    mesh.from_pydata(
+        [(1, -1, 0), (2, -1, 0), (1, 1, 0)],
+        [],
+        [(0, 1, 2)],
+    )
+    obj = bpy.data.objects.new("ApplyModifierMirror", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    select_only(obj)
+    obj.shape_key_add(name="Basis")
+    asymmetric = obj.shape_key_add(name="Asymmetric")
+    asymmetric.data[1].co.z = 1.0
+    modifier = obj.modifiers.new("Mirror", "MIRROR")
+    modifier.use_axis[0] = True
+    modifier.use_clip = False
+    modifier.use_mirror_merge = False
+    obj.panda_apply_modifier_name = modifier.name
+
+    assert bpy.ops.panda.apply_modifier() == {"FINISHED"}
+    assert len(obj.data.vertices) == 6
+    assert [block.name for block in obj.data.shape_keys.key_blocks] == [
+        "Basis",
+        "Asymmetric",
+    ]
+    result = obj.data.shape_keys.key_blocks["Asymmetric"]
+    raised = [point.co for point in result.data if point.co.z > 0.5]
+    assert len(raised) == 2
+    assert {round(point.x) for point in raised} == {-2, 2}
+    assert_no_apply_modifier_temporary_data()
+
+
+def test_apply_modifier_topology_mismatch_is_safe():
+    source_mesh = create_cube_mesh("ApplyModifierMismatchMesh")
+    source = bpy.data.objects.new("ApplyModifierMismatch", source_mesh)
+    bpy.context.scene.collection.objects.link(source)
+    cutter_mesh = create_cube_mesh("ApplyModifierCutterMesh", center=(1.0, 0.0, 0.0))
+    cutter = bpy.data.objects.new("ApplyModifierCutter", cutter_mesh)
+    bpy.context.scene.collection.objects.link(cutter)
+    select_only(source)
+
+    source.shape_key_add(name="Basis")
+    moved = source.shape_key_add(name="MovedAway")
+    for point in moved.data:
+        point.co.x += 10.0
+    modifier = source.modifiers.new("Boolean", "BOOLEAN")
+    modifier.operation = "DIFFERENCE"
+    modifier.solver = "EXACT"
+    modifier.object = cutter
+    source.panda_apply_modifier_name = modifier.name
+
+    original_mesh = source.data
+    original_coordinates = [point.co.copy() for point in moved.data]
+    try:
+        result = bpy.ops.panda.apply_modifier()
+    except RuntimeError as exc:
+        assert "inconsistent topology" in str(exc)
+    else:
+        assert result == {"CANCELLED"}
+    assert source.data == original_mesh
+    assert source.modifiers.get("Boolean") is not None
+    assert [point.co for point in source.data.shape_keys.key_blocks["MovedAway"].data] == (
+        original_coordinates
+    )
+    assert_no_apply_modifier_temporary_data()
+
+
+def test_apply_modifier_rejects_armature_modifier():
+    mesh = create_cube_mesh("ApplyModifierArmatureMesh")
+    obj = bpy.data.objects.new("ApplyModifierArmature", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    select_only(obj)
+    modifier = obj.modifiers.new("Armature", "ARMATURE")
+    obj.panda_apply_modifier_name = modifier.name
+    try:
+        result = bpy.ops.panda.apply_modifier()
+    except RuntimeError as exc:
+        assert "Armature Modifiers are not supported" in str(exc)
+    else:
+        assert result == {"CANCELLED"}
+    assert obj.modifiers.get("Armature") is not None
+
+
 def main():
     panda_tool.register()
     bpy.context.preferences.edit.use_global_undo = True
 
+    test_apply_modifier_without_shape_keys()
+    test_apply_modifier_preserves_shape_keys_and_driver()
+    test_apply_mirror_preserves_asymmetric_shape()
+    test_apply_modifier_topology_mismatch_is_safe()
+    test_apply_modifier_rejects_armature_modifier()
     test_disconnect_bones()
     test_remove_unused_vertex_groups()
     test_property_recovery_after_update()
@@ -475,6 +688,7 @@ def main():
     panda_tool.unregister()
     assert not hasattr(bpy.types.Object, "panda_unused_vertex_groups")
     assert not hasattr(bpy.types.Object, "panda_unregistered_bones")
+    assert not hasattr(bpy.types.Object, "panda_apply_modifier_name")
     print("Panda Tool Blender integration test: OK")
 
 

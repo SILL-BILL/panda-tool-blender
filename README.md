@@ -1,8 +1,8 @@
 # Panda Tool Blender
 
 Panda Tool is a small collection of practical Blender utilities for animation
-and rigging. Version 0.4.0 contains **Create Anchor**, **Disconnect Bones**,
-**Delete Unregistered Bones**, and **Remove Unused Vertex Groups Safe**.
+and rigging. Version 0.5.0 adds **Panda Apply Modifier** to the existing rigging
+and cleanup tools.
 
 ## Supported Blender versions
 
@@ -13,13 +13,34 @@ Blender 3.6 is not officially supported.
 
 ## Installation
 
-1. Download or build `panda_tool-0.4.0.zip`.
+1. Download or build `panda_tool-0.5.0.zip`.
 2. In Blender, open **Edit > Preferences > Get Extensions**.
 3. Open the menu, choose **Install from Disk**, and select the ZIP.
 4. Enable **Panda Tool** if it is not enabled automatically.
 
 The ZIP uses the Blender Extension format introduced for Blender 4.2. Its
 package root contains both `blender_manifest.toml` and `__init__.py`.
+
+## Panda Apply Modifier
+
+1. Select one Mesh Object in Object Mode.
+2. Open **3D Viewport > Sidebar > Panda Tool > Panda Apply Modifier**.
+3. Select one Modifier and click **Apply Safely**.
+
+The tool applies the selected Modifier on disposable copies for the Basis and
+every Shape Key. It verifies that all results have identical vertex, edge, and
+polygon topology before replacing the original mesh. Shape Key names, order,
+coordinates, values, slider ranges, mute states, vertex-group settings,
+interpolation, relative-key relationships, custom properties, Actions, and
+Drivers are preserved. A failure removes temporary data and leaves the original
+Object unchanged. The operation supports Undo.
+
+Only one Modifier and one active Mesh are processed at a time. Armature
+Modifiers are intentionally rejected in version 0.5.0. NLA tracks on the Shape
+Key datablock and external references that directly target the old Shape Key
+datablock are not migrated. Geometry Nodes, Boolean, Decimate, and similar
+topology-dependent Modifiers are accepted only when every Shape Key produces
+exactly the same topology.
 
 ## Create Anchor
 
@@ -102,7 +123,7 @@ blender --background --python tests/blender_integration.py
 
 Run `build.bat` from the repository root, or double-click it in Explorer. The
 script uses Blender's standard Extension build command and writes the package
-to `dist/panda_tool-0.4.0.zip`:
+to `dist/panda_tool-0.5.0.zip`:
 
 ```powershell
 .\build.bat
