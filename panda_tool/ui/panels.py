@@ -65,6 +65,7 @@ class PANDA_PT_rig_tools(bpy.types.Panel):
         layout.operator("panda_tool.create_anchor", icon="BONE_DATA")
         layout.operator("panda_tool.disconnect_bones", icon="UNLINKED")
         layout.operator("panda_tool.remove_constraints", icon="CONSTRAINT")
+        layout.operator("panda_tool.convert_names_to_english", icon="SORTALPHA")
 
         layout.separator()
         obj = context.active_object

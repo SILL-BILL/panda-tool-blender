@@ -2,6 +2,7 @@
 
 from .apply_modifier import CLASSES as apply_modifier_classes
 from .create_anchor import PANDA_OT_create_anchor
+from .convert_names_to_english import PANDA_OT_convert_names_to_english
 from .delete_unregistered_bones import CLASSES as bone_cleanup_classes
 from .disconnect_bones import PANDA_OT_disconnect_bones
 from .remove_constraints import PANDA_OT_remove_constraints
@@ -15,4 +16,5 @@ CLASSES = (
     PANDA_OT_create_anchor,
     PANDA_OT_disconnect_bones,
     PANDA_OT_remove_constraints,
+    PANDA_OT_convert_names_to_english,
 )

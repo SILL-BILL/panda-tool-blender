@@ -3,7 +3,7 @@
 [English](README.md) | 日本語
 
 Panda Toolは、Blenderでのアニメーション制作やリギングを効率化する、
-小さな実用ツールのコレクションです。v0.7.0で **Remove Constraints** を追加しました。
+小さな実用ツールのコレクションです。v0.8.0で **Convert Names to English** を追加しました。
 
 ## 機能一覧
 
@@ -11,6 +11,7 @@ Panda Toolは、Blenderでのアニメーション制作やリギングを効率
 - **Create Anchor**：選択したBoneチェーンのルートにAnchorを追加します。
 - **Disconnect Bones**：選択したEdit BoneのConnectedを解除します。
 - **Remove Constraints**：選択したObjectまたはPose BoneのConstraintをすべて削除します。
+- **Convert Names to English**：内蔵辞書で既知のBone・Shape Key・Material・Object名を英語へ変換します。
 - **Delete Unregistered Bones**：対応するVertex GroupがないBoneを確認して削除します。
 - **Remove Unused Vertex Groups Safe**：正のウェイトがないVertex Groupを確認して削除します。
 
@@ -42,8 +43,8 @@ Blender 3.6は正式サポートの対象外です。
 
 ### ZIPから
 
-1. [v0.7.0のRelease](https://github.com/SILL-BILL/panda-tool-blender/releases/tag/v0.7.0)から
-   `panda_tool-0.7.0.zip`をダウンロードするか、ローカルでビルドします。
+1. [v0.8.0のRelease](https://github.com/SILL-BILL/panda-tool-blender/releases/tag/v0.8.0)から
+   `panda_tool-0.8.0.zip`をダウンロードするか、ローカルでビルドします。
 2. Blenderで **Edit > Preferences > Get Extensions** を開きます。
 3. メニューから **Install from Disk** を選び、ZIPを指定します。
 4. 自動で有効にならない場合は **Panda Tool** を有効にします。
@@ -121,6 +122,68 @@ Blender 4.2 LTS ～ 5.1の互換性とアニメーションデータの保持の
 Objectには`constraints.clear()`、Pose BoneにはBlender標準の`pose.constraints_clear()`を使用します。
 Blender 5.1では個別の`remove()`が関連するアニメーションカーブやDriverも削除するため、使用していません。
 
+## Convert Names to English
+
+1. Object Modeで、処理したいモデルのObjectを選択します。
+2. **3D Viewport > Sidebar > Panda Tool > Rig** を開きます。
+3. **Convert Names to English** をクリックします。
+
+**Bone → Shape Key → Material → Object** の順に名称を変換します。
+選択ObjectのParentやArmature Modifierが参照するArmatureとそのBone、
+選択したMeshのShape Key、割り当てられたMaterialも対象です。
+Boneの選択状態には依存せず、対象Armatureの全Boneを確認します。設定項目やネットワーク通信はありません。
+
+[内蔵辞書](panda_tool/name_dictionary.py)に登録した日本語・簡体字・既知英語Aliasを、
+NFKC正規化後の名称全体で照合します。未知名は元の表記を保持します。
+部分一致、曖昧一致、番号付き接尾辞の推測、Regexによる照合は行いません。
+`腕_L`などは個別に登録したBone Aliasであり、接尾辞から自動生成する規則ではありません。
+ZZZのShape Key変換先52項目は指定どおり使用します。
+`MouthRight`、`MouthLeft`、`下眼上` → `Eyelid_Squint`もそのままの表記です。
+
+現在の辞書の標準名はBone 84、Shape Key 52、Material 31、Object 16件です。
+MMDの捩・IK・肩P/C・D/EX系は通常Boneと区別します。
+指はMMDの番号（親指0～2、他の指1～3）を保持します。
+番号なしの指、役割を推測する補助名、`髪影`・`髪2`・`前髪_透明`などの複合名は変更しません。
+[辞書比較レポート](docs/dictionary-second-pass-comparison.md)に調査資料・採用・不採用を記録しました。
+Shape Keyの52項目と既存Aliasは変更していません。
+
+Material名は内蔵辞書に登録した日本語／中国語の既知Aliasを完全一致で変換します。
+未知名やモデル独自の衣装Material名は変更しません。
+今回の正式対応表では`眼白` → `Sclera`、`白目` → `EyeWhite`、
+`眉` → `Brow`、`瞳` → `Iris`を区別し、他の既存Aliasを保持しています。
+既存の衣装Aliasは維持し、今回の服飾名の追加は指定された`上衣` → `Top`、`袖` → `Sleeve`のみです。
+[Material辞書追加の検証結果](docs/material-dictionary-update-validation.md)も参照してください。
+
+**Basis** と基準となるShape Keyは対象外です。
+名前が衝突する場合は安全にSkipし、`.001`などの名称を生成しません。
+同じ名前空間内の複数Aliasが同じ変換先を要求する場合は、すべてSkipします。
+Object／Materialは全データブロック、Bone／Shape Keyはそれぞれのコレクション内で衝突を確認します。
+Boneの変換先と同名のVertex Groupがある場合も、ウェイトの紐づけを保護するためSkipします。
+Infoにカテゴリ別の変換数と衝突数を表示します。
+
+Blender標準Undo（**Ctrl + Z**）に対応し、変換後の再実行も安全です。
+対象データ、関連する参照、アニメーションにLinked Data／Library Overrideが含まれる場合は、
+名称変更前に操作全体を中止します。予期しない書き込み失敗時は、変更済みの名称を戻してから中止します。
+Boneを参照するSINGLE_PROP Driverの配列要素パス（例：
+`pose.bones["左腕捩"].rotation_euler[0]`）も、変更前に操作全体を中止します。
+Blender 4.2／5.1がこのパスを自動更新しないためです。
+ScalarプロパティのパスとTRANSFORMSのBone参照は保持テストの対象です。
+
+独立した翻訳対象は4カテゴリのみです。リグを保持するため、Blender標準の名称変更に伴い、
+Boneに紐づくVertex Group名、ConstraintのSubtarget、アニメーションやDriverのパスなどの参照は追従します。
+Driver／Actionデータブロック、Keyframe、Weight、Geometry、UV、Shape Keyの値や設定、
+MaterialのShaderやSlot、Transform、階層構造を保持します。
+共有データは複製せず1回だけRenameし、既存の利用先を維持します。
+その名称変更や標準の参照追従は、未選択の利用先にも影響する場合があります。
+スクリプト内の文字列、Custom Property、外部DCC／Export用の対応表は翻訳しません。
+
+Blender 4.2.23 LTS／5.1.1で、Shape Key正式表の全項目、参照、衝突、Undo、再実行を自動検証しています。
+指定のYanagi原本はBlender 5形式のため、4.2では直接開けません。
+4.2の実モデル検証はBlender 4.5 LTS経由で保存した検証用コピーを使います。
+互換保存時の警告は、このOperatorの動作とは別の制限です。
+原本にはShape Key Driverがないため、追加検証ではメモリ上のモデルコピーにDriverと
+アニメーションを設定し、変換後も参照が保持されることを確認します。
+
 ## Delete Unregistered Bones
 
 1. Object Modeで、リグに紐づくMesh Objectを1つアクティブにします。
@@ -167,12 +230,15 @@ python -m unittest discover -s tests -v
 ```powershell
 blender --background --factory-startup --python-exit-code 1 --python tests/blender_integration.py
 blender --background --factory-startup --python-exit-code 1 --python tests/remove_constraints_integration.py
+blender --background --factory-startup --python-exit-code 1 --python tests/convert_names_integration.py
+blender --background --factory-startup --python-exit-code 1 --python tests/dictionary_second_pass_integration.py
+blender --background --factory-startup --python-exit-code 1 --python tests/material_dictionary_integration.py
 ```
 
 ## Extensionパッケージのビルド
 
 Repositoryのルートから`build.bat`を実行するか、Explorerでダブルクリックします。
-Blender標準のExtensionビルドコマンドを使用し、`dist/panda_tool-0.7.0.zip`を生成します。
+Blender標準のExtensionビルドコマンドを使用し、`dist/panda_tool-0.8.0.zip`を生成します。
 
 ```powershell
 .\build.bat
