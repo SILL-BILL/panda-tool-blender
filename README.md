@@ -1,19 +1,51 @@
 # Panda Tool Blender
 
+English | [日本語](README_JP.md)
+
 Panda Tool is a small collection of practical Blender utilities for animation
-and rigging. Version 0.6.0 adds current-pose Armature Modifier support to
-**Panda Apply Modifier**.
+and rigging. Version 0.7.0 adds **Remove Constraints**.
+
+## Tools
+
+- **Panda Apply Modifier**: apply one Modifier while preserving Shape Keys,
+  including baking the current Armature pose.
+- **Create Anchor**: add an anchor at each selected bone-chain root.
+- **Disconnect Bones**: disable Connected for selected Edit Bones.
+- **Remove Constraints**: remove all constraints from selected objects or pose bones.
+- **Delete Unregistered Bones**: review and delete bones without matching vertex groups.
+- **Remove Unused Vertex Groups Safe**: review and remove groups without positive weights.
 
 ## Supported Blender versions
 
-- Blender 4.2 LTS through Blender 5.1
+- Blender 4.2 LTS through Blender 5.1.x
 - Tested primarily on Blender 5.1 (currently Blender 5.1.1)
+- Remove Constraints integration tests pass on Blender 4.2.23 LTS and 5.1.1,
+  including selection isolation, animation/Driver preservation and standard
+  Undo in both modes (automated background tests with Undo enabled).
 
 Blender 3.6 is not officially supported.
 
 ## Installation
 
-1. Download or build `panda_tool-0.6.0.zip`.
+### From the Extension Repository
+
+1. Open **Edit > Preferences > Get Extensions** in Blender.
+2. Open **Repositories** and choose **Add Remote Repository**.
+3. Enter the [SILL-BILL Blender Extensions repository URL](https://sill-bill.github.io/blender-extensions/index.json):
+
+   ```text
+   https://sill-bill.github.io/blender-extensions/index.json
+   ```
+
+4. Sync the repository and find **Panda Tool**.
+5. Install it and enable it if necessary. If an older version is already
+   installed from this repository, sync and choose **Update**.
+
+### From a ZIP
+
+1. Download `panda_tool-0.7.0.zip` from the
+   [v0.7.0 release](https://github.com/SILL-BILL/panda-tool-blender/releases/tag/v0.7.0),
+   or build it locally.
 2. In Blender, open **Edit > Preferences > Get Extensions**.
 3. Open the menu, choose **Install from Disk**, and select the ZIP.
 4. Enable **Panda Tool** if it is not enabled automatically.
@@ -71,6 +103,36 @@ relationships, bone transforms, animation data, constraints, and unselected
 bones are left unchanged. The button is available only for an armature in Edit
 Mode, and the operation can be reverted with one Undo.
 
+## Remove Constraints
+
+1. In Object Mode, select one or more objects; in Pose Mode, select one or
+   more pose bones.
+2. Open **3D Viewport > Sidebar > Panda Tool > Rig**.
+3. Click **Remove Constraints**.
+
+All constraint types on the selected targets are removed. Object Mode removes
+only Object Constraints; Pose Mode removes only Bone Constraints. Unselected
+targets are untouched. The target is detected automatically from the current
+Blender mode. The button is disabled in other modes or without a
+selection. There are no settings or confirmation dialogs.
+
+The Info report shows the number of removed constraints and selected objects
+or bones, or **No constraints found.** when there is nothing to remove.
+Use **Ctrl + Z** to restore the constraints. Linked data and library overrides
+are unsupported: if either occurs in the selection, the entire operation is
+cancelled before changing any constraints.
+
+The tool does not bake or compensate transforms. Stored transforms, rig
+structure, parents, modifiers, Actions, animation keys, and Drivers are not
+edited. Removing constraints may change the evaluated pose or appearance.
+Animation or Driver paths referencing removed constraints remain unchanged
+and may no longer resolve until Undo restores those constraints.
+
+The implementation uses Object `constraints.clear()` and Blender's standard
+`pose.constraints_clear()` operator for compatibility with Blender 4.2 LTS
+through 5.1. Individual constraint `remove()` calls are avoided because Blender
+5.1 also deletes their associated animation curves and Drivers.
+
 ## Delete Unregistered Bones
 
 1. Make one rigged Mesh Object active in Object Mode.
@@ -121,14 +183,15 @@ python -m unittest discover -s tests -v
 The Blender integration tests can be run with Blender itself:
 
 ```powershell
-blender --background --python tests/blender_integration.py
+blender --background --factory-startup --python-exit-code 1 --python tests/blender_integration.py
+blender --background --factory-startup --python-exit-code 1 --python tests/remove_constraints_integration.py
 ```
 
 ## Build an Extension package
 
 Run `build.bat` from the repository root, or double-click it in Explorer. The
 script uses Blender's standard Extension build command and writes the package
-to `dist/panda_tool-0.6.0.zip`:
+to `dist/panda_tool-0.7.0.zip`:
 
 ```powershell
 .\build.bat
@@ -144,5 +207,16 @@ $env:BLENDER_EXE = 'D:\Apps\Blender\blender.exe'
 ```
 
 Generated files under `dist/` are intentionally excluded from Git. The
-resulting ZIP can later be published as part of a self-hosted Blender Extension
-Repository.
+same release ZIP is distributed through the SILL-BILL Blender Extensions
+Repository without repacking.
+
+## License
+
+[GPL-3.0-only](LICENSE).
+
+## Maintainer and repository
+
+- Maintainer: **Gonsaku**
+- Source: [SILL-BILL/panda-tool-blender](https://github.com/SILL-BILL/panda-tool-blender)
+- Releases: [GitHub Releases](https://github.com/SILL-BILL/panda-tool-blender/releases)
+- Extension Repository: [SILL-BILL/blender-extensions](https://github.com/SILL-BILL/blender-extensions)
